@@ -1,7 +1,6 @@
 package mil.nga.giat.osm.mapreduce.Convert;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -11,15 +10,14 @@ import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.opengis.feature.simple.SimpleFeature;
 
-import mil.nga.giat.geowave.adapter.vector.FeatureDataAdapter;
 import mil.nga.giat.geowave.core.index.ByteArrayId;
 import mil.nga.giat.geowave.core.ingest.hdfs.mapreduce.AbstractMapReduceIngest;
-import mil.nga.giat.geowave.core.store.adapter.AdapterStore;
-import mil.nga.giat.geowave.datastore.accumulo.metadata.AccumuloAdapterStore;
+import mil.nga.giat.geowave.core.store.config.ConfigUtils;
+import mil.nga.giat.geowave.datastore.accumulo.operations.config.AccumuloRequiredOptions;
 import mil.nga.giat.geowave.mapreduce.output.GeoWaveOutputFormat;
 import mil.nga.giat.geowave.mapreduce.output.GeoWaveOutputKey;
 import mil.nga.giat.osm.mapreduce.Convert.OsmProvider.OsmProvider;
-import mil.nga.giat.osm.mapreduce.Ingest.OSMMapperCommandArgs;
+import mil.nga.giat.osm.operations.options.OSMIngestCommandArgs;
 
 public class OSMConversionMapper extends
 		Mapper<Key, Value, GeoWaveOutputKey, Object>
@@ -81,12 +79,18 @@ public class OSMConversionMapper extends
 				indexId = new ByteArrayId(
 						primaryIndexIdStr);
 			}
-			final OSMMapperCommandArgs args = new OSMMapperCommandArgs();
+			final OSMIngestCommandArgs args = new OSMIngestCommandArgs();
 			args.deserializeFromString(
 					context.getConfiguration().get(
 							"arguments"));
-			osmProvider = new OsmProvider(
-					args);
+			
+			Map<String,String> storeOptions = 
+				GeoWaveOutputFormat.getStoreConfigOptions(context);
+			
+			AccumuloRequiredOptions req = new AccumuloRequiredOptions();
+			ConfigUtils.populateOptionsFromList(req, storeOptions);
+			
+			osmProvider = new OsmProvider(args, req);
 		}
 		catch (final Exception e) {
 			throw new IllegalArgumentException(

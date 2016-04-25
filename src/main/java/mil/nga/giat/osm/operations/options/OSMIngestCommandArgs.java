@@ -1,4 +1,4 @@
-package mil.nga.giat.osm.mapreduce.Ingest;
+package mil.nga.giat.osm.operations.options;
 
 import java.io.File;
 import java.io.IOException;
@@ -6,61 +6,106 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.regex.Pattern;
 
+import com.beust.jcommander.IStringConverter;
 import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParametersDelegate;
 
+import mil.nga.giat.geowave.core.store.operations.remote.options.VisibilityOptions;
 import mil.nga.giat.geowave.datastore.accumulo.util.AccumuloUtils;
 
-public class OSMMapperCommandArgs {
+public class OSMIngestCommandArgs {
 
-    public OSMMapperCommandArgs(){}
+	private static final String separator = "|||";
 
-    public OSMMapperCommandArgs(String zookeepers, String instanceName, String user, String pass,
-                                String osmNamespace, String visibility, String hdfsSequenceFile,
-                                String jobName, String mapperType){
-        this.zookeepers = zookeepers;
-        this.instanceName = instanceName;
-        this.user = user;
-        this.pass = pass;
-        this.osmNamespace = osmNamespace;
-        this.visibility = visibility;
-        this.hdfsBasePath = hdfsSequenceFile;
-        this.jobName = jobName;
-        this.mapperType = mapperType;
-    }
-
-	private String separator = "|||";
-
-    @Parameter(names = {"-z","--zookeepers"} , required = false, description = "list of zookeeper:port instances, comma separated")
-    public String zookeepers;
-
-    @Parameter(names = {"-i","--instanceName"}, required = false, description = "accumulo instance name")
-	public String instanceName;
-
-    @Parameter(names = {"-au","--accumuloUser"}, required = false, description = "accumulo username")
-	public String user;
-
-    @Parameter(names = {"-ap","--accumuloPass"}, required = false, description = "accumulo password")
-	public String pass;
-
-    @Parameter(names = {"-n","--osmNamespace"}, required = false, description = "namespace for OSM data")
-	public String osmNamespace;
-
-    @Parameter(names = {"-v","--osmDefaultVisibility"}, required = false, description = "default visibility for  OSM data.")
-	public String visibility = "public";
-
-    @Parameter(names = {"-out", "--hdfsBasePath"}, required = false, description = "file to stage hdfs files to  - user must have write permissions")
-	public String hdfsBasePath = "/user/" + System.getProperty("user.name") + "/osm_stage/";
-
+	@ParametersDelegate
+	private final VisibilityOptions visibilityOptions = new VisibilityOptions();
+	
     @Parameter(names = {"-jn", "--jobName"}, required = false, description = "Name of mapreduce job")
-	public String jobName = "Ingest (" + System.getProperty("user.name") + ")";
+    private String jobName = "Ingest (" + System.getProperty("user.name") + ")";
 
-    @Parameter(names = {"-t", "--type"}, required = true, description = "Mapper type - one of node, way, or relation")
-    public String mapperType;
+    @Parameter(names = {"-t", "--type"}, required = true, converter = UpperCaseConverter.class, description = "Mapper type - one of node, way, or relation")
+    private String mapperType;
 
 	@Parameter(names = {"-m", "--mappingFile"}, required = false, description = "Mapping file, imposm3 form")
-	public String mappingFile = null;
+	private String mappingFile = null;
 
-    protected String osmTableName = "OSM";
+	@Parameter(names = {"--table"}, required = false, description = "OSM Table name in GeoWave")
+    private String osmTableName = "OSM";
+
+    private String ingestDirectory;    
+    private String hdfsBasePath;
+    private String nameNode;
+    private String osmNamespace;
+
+    public OSMIngestCommandArgs(){}
+
+	public VisibilityOptions getVisibilityOptions() {
+		return visibilityOptions;
+	}
+
+	public String getJobName() {
+		return jobName;
+	}
+
+	public void setJobName(String jobName) {
+		this.jobName = jobName;
+	}
+
+	public String getMapperType() {
+		return mapperType;
+	}
+
+	public void setMapperType(String mapperType) {
+		this.mapperType = mapperType;
+	}
+
+	public String getMappingFile() {
+		return mappingFile;
+	}
+
+	public void setMappingFile(String mappingFile) {
+		this.mappingFile = mappingFile;
+	}
+
+	public String getIngestDirectory() {
+		return ingestDirectory;
+	}
+
+	public void setIngestDirectory(String ingestDirectory) {
+		this.ingestDirectory = ingestDirectory;
+	}
+
+	public String getHdfsBasePath() {
+		return hdfsBasePath;
+	}
+
+	public void setHdfsBasePath(String hdfsBasePath) {
+		this.hdfsBasePath = hdfsBasePath;
+	}
+
+	public String getNameNode() {
+		return nameNode;
+	}
+
+	public void setNameNode(String nameNode) {
+		this.nameNode = nameNode;
+	}
+
+	public String getOsmNamespace() {
+		return osmNamespace;
+	}
+
+	public void setOsmNamespace(String osmNamespace) {
+		this.osmNamespace = osmNamespace;
+	}
+
+	public String getOsmTableName() {
+		return osmTableName;
+	}
+
+	public void setOsmTableName(String osmTableName) {
+		this.osmTableName = osmTableName;
+	}
 
 	public String getQualifiedTableName(){
         return AccumuloUtils.getQualifiedTableName(osmNamespace,osmTableName);
@@ -87,7 +132,7 @@ public class OSMMapperCommandArgs {
 			}
 		}
 	}
-
+	
 	public void setMappingContents(String content){
 		mappingContents = content;
 	}
@@ -99,26 +144,22 @@ public class OSMMapperCommandArgs {
 
 	public String serializeToString(){
 		StringBuilder sb = new StringBuilder();
-		sb.append(zookeepers).append(separator).append(instanceName).append(separator).append(user).append(separator).append(pass).append(separator)
-				.append(osmNamespace).append(separator).append(visibility).append(separator).append(hdfsBasePath).append(separator).append(jobName)
-				.append(separator).append(mapperType);
+		sb.append(osmNamespace)
+			.append(separator).append(visibilityOptions.getVisibility())
+			.append(separator).append(hdfsBasePath)
+			.append(separator).append(jobName)
+			.append(separator).append(mapperType);
 		return sb.toString();
 	}
 
 	public void deserializeFromString(String ser){
 		String[] settings = ser.split(Pattern.quote(separator));
-		zookeepers = settings[0];
-		instanceName = settings[1];
-		user = settings[2];
-		pass = settings[3];
-		osmNamespace  = settings[4];
-		visibility = settings[5];
-		hdfsBasePath = settings[6];
-		jobName = settings[7];
-		mapperType = settings[8];
+		osmNamespace  = settings[0];
+		visibilityOptions.setVisibility(settings[1]);
+		hdfsBasePath = settings[2];
+		jobName = settings[3];
+		mapperType = settings[4];
 	}
-
-
 
 	//This the imposm3 "test_mapping.json" file
 	private String mappingContents = "{\n" + "  \"generalized_tables\": {\n" + "    \"waterareas_gen1\": {\n" + "      \"source\": \"waterareas\",\n" + "      \"sql_filter\": \"ST_Area(geometry)>50000.000000\",\n" + "      \"tolerance\": 50.0\n" + "    },\n" + "    \"waterareas_gen0\": {\n" + "      \"source\": \"waterareas_gen1\",\n" + "      \"sql_filter\": \"ST_Area(geometry)>500000.000000\",\n" + "      \"tolerance\": 200.0\n" + "    },\n" + "    \"roads_gen0\": {\n" + "      \"source\": \"roads_gen1\",\n" + "      \"sql_filter\": null,\n" + "      \"tolerance\": 200.0\n" + "    },\n" + "    \"roads_gen1\": {\n" + "      \"source\": \"roads\",\n" + "      \"sql_filter\": \"type IN ('motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link') OR class IN('railway')\",\n" + "      \"tolerance\": 50.0\n" + "    },\n" + "    \"waterways_gen0\": {\n" + "      \"source\": \"waterways_gen1\",\n"
@@ -148,4 +189,11 @@ public class OSMMapperCommandArgs {
 			+ "        {\n" + "          \"type\": \"string\",\n" + "          \"name\": \"addr:street\",\n" + "          \"key\": \"addr:street\"\n" + "        },\n" + "        {\n" + "          \"type\": \"string\",\n" + "          \"name\": \"addr:postcode\",\n" + "          \"key\": \"addr:postcode\"\n" + "        },\n" + "        {\n" + "          \"type\": \"string\",\n" + "          \"name\": \"addr:city\",\n" + "          \"key\": \"addr:city\"\n" + "        }\n" + "      ],\n" + "      \"type\": \"point\",\n" + "      \"mapping\": {\n" + "        \"addr:housenumber\": [\n" + "          \"__any__\"\n" + "        ]\n" + "      }\n" + "    },\n" + "    \"waterareas\": {\n" + "      \"fields\": [\n" + "        {\n" + "          \"type\": \"id\",\n" + "          \"name\": \"osm_id\",\n" + "          \"key\": null\n" + "        },\n" + "        {\n" + "          \"type\": \"validated_geometry\",\n" + "          \"name\": \"geometry\",\n" + "          \"key\": null\n"
 			+ "        },\n" + "        {\n" + "          \"type\": \"string\",\n" + "          \"name\": \"name\",\n" + "          \"key\": \"name\"\n" + "        },\n" + "        {\n" + "          \"type\": \"mapping_value\",\n" + "          \"name\": \"type\",\n" + "          \"key\": null\n" + "        },\n" + "        {\n" + "          \"type\": \"pseudoarea\",\n" + "          \"name\": \"area\",\n" + "          \"key\": null\n" + "        }\n" + "      ],\n" + "      \"type\": \"polygon\",\n" + "      \"mapping\": {\n" + "        \"waterway\": [\n" + "          \"riverbank\"\n" + "        ],\n" + "        \"landuse\": [\n" + "          \"basin\",\n" + "          \"reservoir\"\n" + "        ],\n" + "        \"natural\": [\n" + "          \"water\"\n" + "        ],\n" + "        \"amenity\": [\n" + "          \"swimming_pool\"\n" + "        ],\n" + "        \"leisure\": [\n" + "          \"swimming_pool\"\n" + "        ]\n" + "      }\n" + "    }\n" + "  }\n" + "}";
 
+	public static class UpperCaseConverter implements IStringConverter<String> {
+		@Override
+		public String convert(String value) {
+			return value.toUpperCase();
+		}
+		
+	}
 }

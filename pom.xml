@@ -25,7 +25,7 @@
 		<accumulo.version>1.6.2</accumulo.version>
 		<hadoop.version>2.6.0</hadoop.version>
 		<avro.version>1.7.6</avro.version>
-		<jcommander.version>1.32</jcommander.version>
+		<jackson.version>2.5.1</jackson.version>
 		<geotools.scope>compile</geotools.scope>
 		<accumulo.scope>compile</accumulo.scope>
 		<hadoop.scope>compile</hadoop.scope>
@@ -44,20 +44,20 @@
 		<test.args>-Xms256m -Xmx1024m -XX:MaxPermSize=256m</test.args>
 		<geowave.version>0.9.1-SNAPSHOT</geowave.version>
 		<junit.version>4.12</junit.version>
-        <jackson.core.version>2.5.1</jackson.core.version>
 	</properties>
 
 	<dependencies>
-		<dependency>
-			<groupId>com.beust</groupId>
-			<artifactId>jcommander</artifactId>
-			<version>${jcommander.version}</version>
-		</dependency>
 		<dependency>
 			<groupId>org.apache.accumulo</groupId>
 			<artifactId>accumulo-core</artifactId>
 			<version>${accumulo.version}</version>
 			<scope>${accumulo.scope}</scope>
+			<exclusions>
+				<exclusion>
+					<artifactId>jcommander</artifactId>
+					<groupId>com.beust</groupId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.hadoop</groupId>
@@ -97,7 +97,43 @@
         </dependency>
 		<dependency>
 			<groupId>mil.nga.giat</groupId>
-			<artifactId>geowave-test</artifactId>
+			<artifactId>geowave-core-mapreduce</artifactId>
+			<version>${geowave.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>mil.nga.giat</groupId>
+			<artifactId>geowave-datastore-accumulo</artifactId>
+			<version>${geowave.version}</version>
+			<exclusions>
+				<exclusion>
+					<artifactId>jcommander</artifactId>
+					<groupId>com.beust</groupId>
+				</exclusion>
+			</exclusions>
+		</dependency>		
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-core</artifactId>
+			<version>${jackson.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+			<version>${jackson.version}</version>
+		</dependency>		
+		<dependency>
+			<groupId>mil.nga.giat</groupId>
+			<artifactId>geowave-core-store</artifactId>
+			<version>${geowave.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>mil.nga.giat</groupId>
+			<artifactId>geowave-adapter-vector</artifactId>
+			<version>${geowave.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>mil.nga.giat</groupId>
+			<artifactId>geowave-core-cli</artifactId>
 			<version>${geowave.version}</version>
 		</dependency>
 		<dependency>
@@ -125,6 +161,10 @@
 					<groupId>org.slf4j</groupId>
 					<artifactId>*</artifactId>
 				</exclusion>
+				<exclusion>
+					<artifactId>jcommander</artifactId>
+					<groupId>com.beust</groupId>
+				</exclusion>
 			</exclusions>
 		</dependency>
         <dependency>
@@ -142,16 +182,17 @@
             <artifactId>stax-api</artifactId>
             <version>1.0-2</version>
         </dependency>
-    <dependency>
+    	<dependency>
             <groupId>org.apache.avro</groupId>
             <artifactId>avro</artifactId>
             <version>${avro.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-core</artifactId>
-            <version>${jackson.core.version}</version>
-        </dependency>
+		<dependency>
+			<groupId>mil.nga.giat</groupId>
+			<artifactId>geowave-test</artifactId>
+			<version>${geowave.version}</version>
+			<scope>test</scope>
+		</dependency>        
     </dependencies>
 
 	<build>

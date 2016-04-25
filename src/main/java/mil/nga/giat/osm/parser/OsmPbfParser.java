@@ -28,7 +28,6 @@ import org.openstreetmap.osmosis.osmbinary.file.BlockInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import mil.nga.giat.osm.OSMCommandArgs;
 import mil.nga.giat.osm.types.generated.MemberType;
 import mil.nga.giat.osm.types.generated.Node;
 import mil.nga.giat.osm.types.generated.Primitive;
@@ -41,20 +40,20 @@ public class OsmPbfParser
 
 	private static Logger LOGGER = org.slf4j.LoggerFactory.getLogger(OsmPbfParser.class);
 
-	public void stageData(OSMCommandArgs args) throws IOException {
-		final OSMCommandArgs arg = args;
+	public Configuration stageData(OsmPbfParserOptions args) throws IOException {
+		final OsmPbfParserOptions arg = args;
 		final Configuration conf = new Configuration();
-		conf.set("fs.default.name", "hdfs://" + args.nameNode);
+		conf.set("fs.default.name", args.getNameNode());
 		conf.set("fs.hdfs.impl",org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());
 
 
 		FileSystem fs = FileSystem.get(conf);
-		Path basePath = new Path(arg.hdfsBasePath);
+		Path basePath = new Path(arg.getHdfsBasePath());
 
 
 		if (!fs.exists(basePath)){
 			if (!fs.mkdirs(basePath)){
-				throw new IOException("Unable to create staging directory: hdfs://" + arg.nameNode + arg.hdfsBasePath);
+				throw new IOException("Unable to create staging directory: " + arg.getNameNode() + arg.getHdfsBasePath());
 			}
 		}
 		Path nodesPath = new Path(arg.getNodesBasePath());
@@ -86,11 +85,11 @@ public class OsmPbfParser
 			parser.setupWriter(nodeWriter, wayWriter, relationWriter);
 
 				Files.walkFileTree(
-					Paths.get(args.ingestDirectory), new SimpleFileVisitor<java.nio.file.Path>()
+					Paths.get(args.getIngestDirectory()), new SimpleFileVisitor<java.nio.file.Path>()
 					{
 						@Override public FileVisitResult visitFile( java.nio.file.Path file, BasicFileAttributes attrs )
 								throws IOException {
-							if (file.getFileName().toString().endsWith(arg.extension)) {
+							if (file.getFileName().toString().endsWith(arg.getExtension())) {
 								loadFileToHdfs(file, parser);
 							}
 							return FileVisitResult.CONTINUE;
@@ -109,6 +108,8 @@ public class OsmPbfParser
 			IOUtils.closeQuietly(relationOut);
 
 		}
+		
+		return conf;
 	}
 
 	private static void loadFileToHdfs( java.nio.file.Path file, OsmAvroBinaryParser parser){

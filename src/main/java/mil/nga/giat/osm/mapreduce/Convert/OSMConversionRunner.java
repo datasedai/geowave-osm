@@ -2,8 +2,6 @@ package mil.nga.giat.osm.mapreduce.Convert;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.apache.accumulo.core.client.ClientConfiguration;
 import org.apache.accumulo.core.client.IteratorSetting;
@@ -23,19 +21,23 @@ import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.opengis.feature.simple.SimpleFeature;
 
-import com.beust.jcommander.JCommander;
-
 import mil.nga.giat.geowave.adapter.vector.FeatureDataAdapter;
+import mil.nga.giat.geowave.core.cli.parser.CommandLineOperationParams;
+import mil.nga.giat.geowave.core.cli.parser.OperationParser;
 import mil.nga.giat.geowave.core.geotime.ingest.SpatialDimensionalityTypeProvider;
 import mil.nga.giat.geowave.core.index.StringUtils;
 import mil.nga.giat.geowave.core.ingest.hdfs.mapreduce.AbstractMapReduceIngest;
 import mil.nga.giat.geowave.core.store.adapter.AdapterStore;
+import mil.nga.giat.geowave.core.store.config.ConfigUtils;
 import mil.nga.giat.geowave.core.store.index.PrimaryIndex;
+import mil.nga.giat.geowave.core.store.operations.remote.options.DataStorePluginOptions;
+import mil.nga.giat.geowave.datastore.accumulo.AccumuloDataStoreFactory;
 import mil.nga.giat.geowave.datastore.accumulo.BasicAccumuloOperations;
 import mil.nga.giat.geowave.datastore.accumulo.metadata.AccumuloAdapterStore;
+import mil.nga.giat.geowave.datastore.accumulo.operations.config.AccumuloRequiredOptions;
 import mil.nga.giat.geowave.mapreduce.output.GeoWaveOutputFormat;
 import mil.nga.giat.geowave.mapreduce.output.GeoWaveOutputKey;
-import mil.nga.giat.osm.mapreduce.Ingest.OSMMapperCommandArgs;
+import mil.nga.giat.osm.operations.options.OSMIngestCommandArgs;
 import mil.nga.giat.osm.osmfeature.types.features.FeatureDefinitionSet;
 
 public class OSMConversionRunner extends
@@ -43,68 +45,89 @@ public class OSMConversionRunner extends
 		Tool
 {
 
+	private OSMIngestCommandArgs ingestOptions;
+	private AccumuloRequiredOptions accumuloOptions;
+
 	public static void main(
 			final String[] args )
 			throws Exception {
-		final int res = ToolRunner.run(
-				new Configuration(),
-				new OSMConversionRunner(),
-				args);
-		System.exit(
-				res);
+		
+		OSMIngestCommandArgs ingestArgs = new OSMIngestCommandArgs();
+		DataStorePluginOptions opts = new DataStorePluginOptions();
+        opts.selectPlugin(new AccumuloDataStoreFactory().getName());
+        
+        OperationParser parser = new OperationParser();
+        parser.addAdditionalObject(ingestArgs);
+        parser.addAdditionalObject(opts);
+        
+        CommandLineOperationParams params = parser.parse(args);
+        if (params.getSuccessCode() == 0) {
+        	OSMConversionRunner runner = new OSMConversionRunner(ingestArgs, opts);
+            int res = ToolRunner.run(new Configuration(), runner, args);
+            System.exit(res);
+        }
+
+        System.out.println(params.getSuccessMessage());
+        System.exit(params.getSuccessCode());		
 	}
 
+	public OSMConversionRunner(OSMIngestCommandArgs ingestOptions, 
+			DataStorePluginOptions inputStoreOptions) {
+		
+		this.ingestOptions = ingestOptions;
+    	if (!inputStoreOptions.getType().equals(new AccumuloDataStoreFactory().getName())) {
+    		throw new RuntimeException("Expected accumulo data store");
+    	}
+    	this.accumuloOptions = (AccumuloRequiredOptions)inputStoreOptions.getFactoryOptions();		
+	}
+	
 	@Override
 	public int run(
 			final String[] args )
 			throws Exception {
 
-		final OSMMapperCommandArgs argv = new OSMMapperCommandArgs();
-		new JCommander(
-				argv,
-				args);
 		final Configuration conf = getConf();
 
 		// job settings
 
 		final Job job = Job.getInstance(
 				conf,
-				argv.jobName + "NodeConversion");
+				ingestOptions.getJobName() + "NodeConversion");
 		job.setJarByClass(
 				OSMConversionRunner.class);
 
 		job.getConfiguration().set(
 				"osm_mapping",
-				argv.getMappingContents());
+				ingestOptions.getMappingContents());
 		job.getConfiguration().set(
 				"arguments",
-				argv.serializeToString());
+				ingestOptions.serializeToString());
 
-		if (argv.visibility != null) {
+		if (ingestOptions.getVisibilityOptions().getVisibility() != null) {
 			job.getConfiguration().set(
 					AbstractMapReduceIngest.GLOBAL_VISIBILITY_KEY,
-					argv.visibility);
+					ingestOptions.getVisibilityOptions().getVisibility());
 		}
 
 		// input format
 
 		AbstractInputFormat.setConnectorInfo(
 				job,
-				argv.user,
+				accumuloOptions.getUser(),
 				new PasswordToken(
-						argv.pass));
+						accumuloOptions.getPassword()));
 		InputFormatBase.setInputTableName(
 				job,
-				argv.getQualifiedTableName());
+				ingestOptions.getQualifiedTableName());
 		AbstractInputFormat.setZooKeeperInstance(
 				job,
 				new ClientConfiguration().withInstance(
-						argv.instanceName).withZkHosts(
-								argv.zookeepers));
+						accumuloOptions.getInstance()).withZkHosts(
+								accumuloOptions.getZookeeper()));
 		AbstractInputFormat.setScanAuthorizations(
 				job,
 				new Authorizations(
-						argv.visibility));
+						ingestOptions.getVisibilityOptions().getVisibility()));
 
 		final IteratorSetting is = new IteratorSetting(
 				50,
@@ -126,33 +149,17 @@ public class OSMConversionRunner extends
 		GeoWaveOutputFormat.setDataStoreName(
 				job.getConfiguration(),
 				"accumulo");
-		final Map<String, String> storeConfigOptions = new HashMap<String, String>();
-		storeConfigOptions.put(
-				BasicAccumuloOperations.ZOOKEEPER_CONFIG_NAME,
-				argv.zookeepers);
-		storeConfigOptions.put(
-				BasicAccumuloOperations.INSTANCE_CONFIG_NAME,
-				argv.instanceName);
-		storeConfigOptions.put(
-				BasicAccumuloOperations.USER_CONFIG_NAME,
-				argv.user);
-		storeConfigOptions.put(
-				BasicAccumuloOperations.PASSWORD_CONFIG_NAME,
-				argv.pass);
 		GeoWaveOutputFormat.setStoreConfigOptions(
 				job.getConfiguration(),
-				storeConfigOptions);
-		GeoWaveOutputFormat.setGeoWaveNamespace(
-				job.getConfiguration(),
-				"");
+				ConfigUtils.populateListFromOptions(accumuloOptions));
 
 		final AdapterStore as = new AccumuloAdapterStore(
 				new BasicAccumuloOperations(
-						argv.zookeepers,
-						argv.instanceName,
-						argv.user,
-						argv.pass,
-						argv.osmNamespace));
+						accumuloOptions.getZookeeper(),
+						accumuloOptions.getInstance(),
+						accumuloOptions.getUser(),
+						accumuloOptions.getPassword(),
+						accumuloOptions.getGeowaveNamespace()));
 		for (final FeatureDataAdapter fda : FeatureDefinitionSet.featureAdapters.values()) {
 			as.addAdapter(
 					fda);

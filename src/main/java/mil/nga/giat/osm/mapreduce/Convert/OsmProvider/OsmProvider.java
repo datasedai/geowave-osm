@@ -32,9 +32,10 @@ import mil.nga.giat.geowave.core.geotime.GeometryUtils;
 import mil.nga.giat.geowave.core.store.data.field.FieldReader;
 import mil.nga.giat.geowave.core.store.data.field.FieldUtils;
 import mil.nga.giat.geowave.core.store.data.field.FieldWriter;
+import mil.nga.giat.geowave.datastore.accumulo.operations.config.AccumuloRequiredOptions;
 import mil.nga.giat.osm.accumulo.osmschema.Schema;
 import mil.nga.giat.osm.mapreduce.Convert.SimpleFeatureGenerator;
-import mil.nga.giat.osm.mapreduce.Ingest.OSMMapperCommandArgs;
+import mil.nga.giat.osm.operations.options.OSMIngestCommandArgs;
 import mil.nga.giat.osm.osmfeature.types.features.FeatureDefinition;
 import mil.nga.giat.osm.types.TypeUtils;
 
@@ -43,18 +44,18 @@ public class OsmProvider
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(OsmProvider.class);
 	private Connector conn = null;
-	private OSMMapperCommandArgs args;
 	private BatchScanner bs = null;
 	private final FieldWriter<?, Long> longWriter = FieldUtils.getDefaultWriterForClass(Long.class);
 	private final FieldReader<Long> longReader = FieldUtils.getDefaultReaderForClass(Long.class);
 	private final FieldReader<Double> doubleReader = FieldUtils.getDefaultReaderForClass(Double.class);
 	private static final byte EMPTY_BYTES[] = new byte[0];
 
-	public OsmProvider(OSMMapperCommandArgs args)
+	public OsmProvider(
+			OSMIngestCommandArgs args,
+			AccumuloRequiredOptions store)
 			throws AccumuloSecurityException, AccumuloException, TableNotFoundException {
-		this.args = args;
-		conn = new ZooKeeperInstance(args.instanceName, args.zookeepers).getConnector(args.user, new PasswordToken(args.pass));
-		bs = conn.createBatchScanner(args.getQualifiedTableName(), new Authorizations(args.visibility), 1);
+		conn = new ZooKeeperInstance(store.getInstance(), store.getZookeeper()).getConnector(store.getUser(), new PasswordToken(store.getPassword()));
+		bs = conn.createBatchScanner(args.getQualifiedTableName(), new Authorizations(args.getVisibilityOptions().getVisibility()), 1);
 	}
 
 	public Geometry processRelation(SimpleFeatureGenerator.OSMUnion osmunion, FeatureDefinition fd){

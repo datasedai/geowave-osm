@@ -20,10 +20,14 @@ import org.apache.hadoop.util.ToolRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.beust.jcommander.JCommander;
-
+import mil.nga.giat.geowave.core.cli.parser.CommandLineOperationParams;
+import mil.nga.giat.geowave.core.cli.parser.OperationParser;
+import mil.nga.giat.geowave.core.store.operations.remote.options.DataStorePluginOptions;
+import mil.nga.giat.geowave.datastore.accumulo.AccumuloDataStoreFactory;
 import mil.nga.giat.geowave.datastore.accumulo.BasicAccumuloOperations;
+import mil.nga.giat.geowave.datastore.accumulo.operations.config.AccumuloRequiredOptions;
 import mil.nga.giat.osm.accumulo.osmschema.Schema;
+import mil.nga.giat.osm.operations.options.OSMIngestCommandArgs;
 import mil.nga.giat.osm.types.generated.Node;
 import mil.nga.giat.osm.types.generated.Relation;
 import mil.nga.giat.osm.types.generated.Way;
@@ -34,58 +38,84 @@ public class OSMRunner
     private static final Logger log = LoggerFactory.getLogger(OSMRunner.class);
     private org.apache.avro.Schema avroSchema = null;
     private String inputAvroFile = null;
+    
+    private final OSMIngestCommandArgs ingestOptions;
+    private final AccumuloRequiredOptions accumuloOptions;
 
     public static void main(String[] args) throws Exception {
-        OSMMapperCommandArgs argv = new OSMMapperCommandArgs();
-        new JCommander(argv, args);
-        OSMRunner runner = new OSMRunner();
+    	OSMIngestCommandArgs argv = new OSMIngestCommandArgs();
+        DataStorePluginOptions opts = new DataStorePluginOptions();
+        opts.selectPlugin(new AccumuloDataStoreFactory().getName());
+        
+        OperationParser parser = new OperationParser();
+        parser.addAdditionalObject(argv);
+        parser.addAdditionalObject(opts);
+        
+        CommandLineOperationParams params = parser.parse(args);
+        if (params.getSuccessCode() == 0) {
+            OSMRunner runner = new OSMRunner(argv, opts);
+            int res = ToolRunner.run(new Configuration(), runner, args);
+            System.exit(res);
+        }
 
-        int res = ToolRunner.run(new Configuration(), runner, args);
-        System.exit(res);
+        System.out.println(params.getSuccessMessage());
+        System.exit(params.getSuccessCode());
     }
+    
+    public OSMRunner(OSMIngestCommandArgs ingestOptions, 
+    		DataStorePluginOptions inputStoreOptions) {
+    	this.ingestOptions = ingestOptions;
+    	if (!inputStoreOptions.getType().equals(new AccumuloDataStoreFactory().getName())) {
+    		throw new RuntimeException("Expected accumulo data store");
+    	}
+    	this.accumuloOptions = (AccumuloRequiredOptions)inputStoreOptions.getFactoryOptions();
+    	
+	}
 
-    public void configureSchema(org.apache.avro.Schema avroSchema){
+	public void configureSchema(org.apache.avro.Schema avroSchema){
         this.avroSchema = avroSchema;
     }
 
-    private void enableLocalityGroups(OSMMapperCommandArgs argv) throws AccumuloSecurityException, AccumuloException, TableNotFoundException {
-        BasicAccumuloOperations bao = new BasicAccumuloOperations(argv.zookeepers,argv.instanceName,argv.user,argv.pass,argv.osmNamespace);
-        bao.createTable(argv.osmTableName);
+    private void enableLocalityGroups(OSMIngestCommandArgs argv) throws AccumuloSecurityException, AccumuloException, TableNotFoundException {
+        BasicAccumuloOperations bao = new BasicAccumuloOperations(accumuloOptions.getZookeeper(),
+        		accumuloOptions.getInstance(),
+        		accumuloOptions.getUser(),
+        		accumuloOptions.getPassword(),
+        		accumuloOptions.getGeowaveNamespace());
+        bao.createTable(argv.getOsmTableName());
 
-        bao.addLocalityGroup(argv.osmTableName, Schema.CF.NODE);
-        bao.addLocalityGroup(argv.osmTableName, Schema.CF.WAY);
-        bao.addLocalityGroup(argv.osmTableName, Schema.CF.RELATION);
+        bao.addLocalityGroup(argv.getOsmTableName(), Schema.CF.NODE);
+        bao.addLocalityGroup(argv.getOsmTableName(), Schema.CF.WAY);
+        bao.addLocalityGroup(argv.getOsmTableName(), Schema.CF.RELATION);
     }
 
     @Override
     public int run(String[] args) throws Exception {
 
-        OSMMapperCommandArgs argv = new OSMMapperCommandArgs();
-        new JCommander(argv, args);
         Configuration conf = this.getConf();
-        conf.set("tableName", argv.getQualifiedTableName());
-        conf.set("osmVisibility", argv.visibility);
+        conf.set("tableName", ingestOptions.getQualifiedTableName());
+        conf.set("osmVisibility", ingestOptions.getVisibilityOptions().getVisibility());
 
         //job settings
-        Job job = Job.getInstance(conf, argv.jobName);
+        Job job = Job.getInstance(conf, ingestOptions.getJobName());
         job.setJarByClass(OSMRunner.class);
 
-        switch (argv.mapperType){
+        switch (ingestOptions.getMapperType()){
             case "NODE": {
                 configureSchema(Node.getClassSchema());
-                inputAvroFile = argv.getNodesBasePath();
+                inputAvroFile = ingestOptions.getNameNode() + "/" + ingestOptions.getNodesBasePath();
                 job.setMapperClass(OSMNodeMapper.class);
                 break;
             }
             case "WAY": {
                 configureSchema(Way.getClassSchema());
-                inputAvroFile = argv.getWaysBasePath();
+                inputAvroFile = ingestOptions.getNameNode() + "/" + ingestOptions.getWaysBasePath();
                 job.setMapperClass(OSMWayMapper.class);
                 break;
             }
             case "RELATION": {
                 configureSchema(Relation.getClassSchema());
-                inputAvroFile = argv.getRelationsBasePath();
+                inputAvroFile = ingestOptions.getNameNode() + "/" + ingestOptions.getRelationsBasePath();
                 job.setMapperClass(OSMRelationMapper.class);
                 break;
             }
@@ -94,10 +124,7 @@ public class OSMRunner
             throw new MissingArgumentException("argument for mapper type must be one of: NODE, WAY, or RELATION");
         }
 
-
-
-
-        enableLocalityGroups(argv);
+        enableLocalityGroups(ingestOptions);
 
         //input format
 		job.setInputFormatClass(AvroKeyInputFormat.class);
@@ -109,10 +136,10 @@ public class OSMRunner
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Mutation.class);
         job.setOutputFormatClass(AccumuloOutputFormat.class);
-        AccumuloOutputFormat.setConnectorInfo(job, argv.user, new PasswordToken(argv.pass));
+        AccumuloOutputFormat.setConnectorInfo(job, accumuloOptions.getUser(), new PasswordToken(accumuloOptions.getPassword()));
         AccumuloOutputFormat.setCreateTables(job, true);
-        AccumuloOutputFormat.setDefaultTableName(job, argv.getQualifiedTableName());
-        AccumuloOutputFormat.setZooKeeperInstance(job, new ClientConfiguration().withInstance(argv.instanceName).withZkHosts(argv.zookeepers));
+        AccumuloOutputFormat.setDefaultTableName(job, ingestOptions.getQualifiedTableName());
+        AccumuloOutputFormat.setZooKeeperInstance(job, new ClientConfiguration().withInstance(accumuloOptions.getInstance()).withZkHosts(accumuloOptions.getZookeeper()));
 
         //reducer
         job.setNumReduceTasks(0);
