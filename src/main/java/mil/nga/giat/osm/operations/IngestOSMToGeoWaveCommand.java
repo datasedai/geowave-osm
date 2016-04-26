@@ -76,6 +76,17 @@ public class IngestOSMToGeoWaveCommand extends DefaultOperation implements Comma
 		ingestOptions.setHdfsBasePath(basePath);
 		ingestOptions.setNameNode(hdfsHostPort);
 
+		if (inputStoreOptions.getGeowaveNamespace() == null) {
+			inputStoreOptions.getFactoryOptions().setGeowaveNamespace("osmnamespace");
+		}
+
+		if (ingestOptions.getVisibilityOptions().getVisibility() == null) {
+			ingestOptions.getVisibilityOptions().setVisibility("public");
+		}		
+
+		// This is needed by a method in OSMIngsetCommandArgs. 
+		ingestOptions.setOsmNamespace(inputStoreOptions.getGeowaveNamespace());
+
 		// Ingest the data.
 		ingestData();
 		
@@ -85,20 +96,15 @@ public class IngestOSMToGeoWaveCommand extends DefaultOperation implements Comma
 	
 	private void ingestData() throws Exception {
 		
-		if (inputStoreOptions.getGeowaveNamespace() == null) {
-			inputStoreOptions.getFactoryOptions().setGeowaveNamespace("osmnamespace");
-		}
-
-		if (ingestOptions.getVisibilityOptions().getVisibility() == null) {
-			ingestOptions.getVisibilityOptions().setVisibility("public");
-		}
-
-		// This is needed by a method in OSMIngsetCommandArgs. 
-		ingestOptions.setOsmNamespace(inputStoreOptions.getGeowaveNamespace());
-		
 		OSMRunner runner = new OSMRunner(ingestOptions, inputStoreOptions);
 		
-		ToolRunner.run(runner, new String[] {});
+		int res = ToolRunner.run(runner, new String[] {});
+		if (res != 0) {
+			throw new RuntimeException("OSMRunner failed: " + res);
+		}
+		
+		System.out.println("finished ingest");
+		System.out.println("**************************************************");
 	}
 	
 	private void convertData() throws Exception {
@@ -107,7 +113,11 @@ public class IngestOSMToGeoWaveCommand extends DefaultOperation implements Comma
 
 		OSMConversionRunner runner = new OSMConversionRunner(ingestOptions, inputStoreOptions);
 		
-		ToolRunner.run(runner, new String[] {});
+		int res = ToolRunner.run(runner, new String[] {});
+		if (res != 0) {
+			throw new RuntimeException("OSMConversionRunner failed: " + res);
+		}
+
 		System.out.println("finished conversion");
 		System.out.println("**************************************************");
 		System.out.println("**************************************************");

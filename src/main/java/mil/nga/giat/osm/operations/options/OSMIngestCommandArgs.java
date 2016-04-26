@@ -32,7 +32,6 @@ public class OSMIngestCommandArgs {
 	@Parameter(names = {"--table"}, required = false, description = "OSM Table name in GeoWave")
     private String osmTableName = "OSM";
 
-    private String ingestDirectory;    
     private String hdfsBasePath;
     private String nameNode;
     private String osmNamespace;
@@ -65,14 +64,6 @@ public class OSMIngestCommandArgs {
 
 	public void setMappingFile(String mappingFile) {
 		this.mappingFile = mappingFile;
-	}
-
-	public String getIngestDirectory() {
-		return ingestDirectory;
-	}
-
-	public void setIngestDirectory(String ingestDirectory) {
-		this.ingestDirectory = ingestDirectory;
 	}
 
 	public String getHdfsBasePath() {
